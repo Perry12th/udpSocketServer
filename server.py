@@ -23,19 +23,46 @@ def connectionLoop(sock):
             clients[addr] = {}
             clients[addr]['lastBeat'] = datetime.now()
             clients[addr]['color'] = 0
-            message = {"cmd": 0,"player":{"id":str(addr)}}
-            m = json.dumps(message)
+            
+            #Create a small list for the players in game (Not for the new client though)
+            IO_Players = {"cmd" : 0, "players": []}
+            player = {}
+            player["id"] = str(addr)
+            IO_Players['players'].append(player)
+            m = json.dumps(IO_Players)
             for c in clients:
-               sock.sendto(bytes(m,'utf8'), (c[0],c[1]))
+               if c != addr:
+                   sock.sendto(bytes(m,'utf8'), (c[0], c[1]))
 
-def cleanClients():
+            #Create a whole list of players for the new client to make
+            IO_Players = {"cmd" : 0, "players": []}
+            for c in clients:
+               player = {}
+               player["id"] = str(c)
+               IO_Players['players'].append(player)
+            m = json.dumps(IO_Players)
+            
+            sock.sendto(bytes(m,'utf8'), (addr[0], addr[1]))
+
+def cleanClients(sock):
    while True:
+      IO_Players = {"cmd" : 2, "players": []}
       for c in list(clients.keys()):
          if (datetime.now() - clients[c]['lastBeat']).total_seconds() > 5:
             print('Dropped Client: ', c)
+            player = {}
+            player["id"] = str(c)
+            IO_Players['players'].append(player)
             clients_lock.acquire()
             del clients[c]
             clients_lock.release()
+      if (IO_Players.get("players") != []):
+         clients_lock.acquire()
+         m = json.dumps(IO_Players)
+         for c2 in clients:
+            sock.sendto(bytes(m, 'utf8'), (c2[0],c2[1]))
+         print('Dropped Client Message Sent')
+         clients_lock.release()
       time.sleep(1)
 
 def gameLoop(sock):
@@ -62,7 +89,7 @@ def main():
    s.bind(('', port))
    start_new_thread(gameLoop, (s,))
    start_new_thread(connectionLoop, (s,))
-   start_new_thread(cleanClients,())
+   start_new_thread(cleanClients,(s,))
    while True:
       time.sleep(1)
 
